@@ -66,5 +66,8 @@ class CommitMessageVerification:
 
 if __name__ == '__main__':
     project_directory = str(sys.argv[1])
-    verification = CommitMessageVerification(project_directory)
-    verification.get_message()
+    if project_directory:
+        verification = CommitMessageVerification(project_directory)
+        verification.get_message()
+    else:
+        print('The directory of repository might be provided')

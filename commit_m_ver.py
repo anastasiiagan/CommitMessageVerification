@@ -1,29 +1,26 @@
 import sys, inspect
 import os
+from pathlib import Path
+import contextlib
 
 import subprocess
 from collections import namedtuple
 from inspect import getmembers, isfunction, signature
 
+@contextlib.contextmanager
+def change_cwd(directory):
+    """Changes working directory and returns to previous on exit."""
+    prev_cwd = Path.cwd()
+    path = Path(directory)
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(prev_cwd)
+
 class CommitMessageVerification:
     def __init__(self, proj_dict:str):
         self.project_directory = proj_dict
-    
-    def change_directory(self):
-        if self.project_directory.startswith('.'):
-            self.project_directory = os.getcwd() + '\\' + self.project_directory[2:]
-
-        self.project_directory = self.project_directory.replace('\\', '/')
-        print(f"Repository directory: {self.project_directory}")
-
-        try:
-            fd = os.open( self.project_directory, os.O_RDONLY )
-            os.fchdir(fd)
-            return fd
-        except FileNotFoundError:
-            print(f"The specified directory could not be found: {self.project_directory}")
-        except PermissionError:
-            print(f"You don't have permission to enter directory: {self.project_directory}")
     
     def get_repository_status(self):
         process = subprocess.Popen(['git', 'status'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -54,21 +51,17 @@ class CommitMessageVerification:
 
     
     def get_message(self):
-        fd = self.change_directory()    #changes directory and returns it
+        with change_cwd(self.project_directory):
+            print(f'Current directory is {os.getcwd()}')
 
-        # Get repository status
-        out, err = self.get_repository_status()
-        print(f'Repository actual status:')
-        print(f'out = {out}\nerr = {err}\n')
-        # Use 'git diff --cached' instead ?
+            # Get repository status
+            out, err = self.get_repository_status()
+            print(f'Repository actual status:')
+            print(f'out = {out}\nerr = {err}\n')
+            # Use 'git diff --cached' instead ?
 
-        class_dict = self.get_cls_func_sign()
-        print(f'Classes with functions with signatures: {class_dict}\n')
-
-        try:
-            os.close( fd )
-        except TypeError:
-            print("The directory wasn't specified. Couldn't close it.")
+            class_dict = self.get_cls_func_sign()
+            print(f'Classes with functions with signatures: {class_dict}\n')
 
 
 if __name__ == '__main__':

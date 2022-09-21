@@ -19,21 +19,32 @@ def change_cwd(directory):
     finally:
         os.chdir(prev_cwd)
 
+class GitStash(object):
+    """Changes git's status to the last commit and returns to provided changes on exit."""
+    def __init__(self, repo, staged_files):
+        self.repo=repo
+        self.staged_files = staged_files
+
+    def __enter__(self):
+        self.repo.git.stash('save')
+        return self.repo
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.repo.git.stash('pop')
+        for changed_file in self.staged_files:
+            self.repo.git.add(changed_file[0])
+
 class CommitMessageVerification:
     repository = None
     changed_files = []
 
     def __init__(self, proj_dict:str):
         self.project_directory = proj_dict
-    
-    # def get_repository_status(self):
-    #     process = subprocess.Popen(['git', 'status'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    #     return namedtuple('Std', 'out, err')(process.stdout.read(), process.stderr.read())
 
-    # Returns files that were changed and staged
     def get_changed_files(self):
+        """Returns files that were changed and staged."""
         diff_objects = self.repository.index.diff(self.repository.head.commit, create_patch=False)
-        return [(d.a_rawpath, d.change_type) for d in diff_objects]
+        return [(d.a_rawpath.decode("utf-8"), d.change_type) for d in diff_objects]
 
     def get_functions_signature_dict(self, list_of_functions):
         func_sign = {}
@@ -62,12 +73,16 @@ class CommitMessageVerification:
     def get_message(self):
         with change_cwd(self.project_directory):
             # Initialize git repository based on changed directory
-            self.repository = git.Repo('.')
-
+            self.repository = git.Repo()
 
             # Get staged changed files status
             self.changed_files = self.get_changed_files()
             print(f'Changed files: {self.changed_files}\n')
+
+            with GitStash(self.repository, self.changed_files):
+                print(f'Changed files after git stash push: {self.get_changed_files()}\n')
+            
+            print(f'Changed files after git stash pop: {self.get_changed_files()}\n')
 
             # class_dict = self.get_cls_func_sign()
             # print(f'Classes with functions with signatures: {class_dict}\n')
@@ -79,4 +94,4 @@ if __name__ == '__main__':
         verification = CommitMessageVerification(project_directory)
         verification.get_message()
     else:
-        print('The directory of repository might be provided')
+        print("The directory of repository wasn't provided")

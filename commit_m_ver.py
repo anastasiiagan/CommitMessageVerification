@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 import contextlib
 
-import subprocess
+import git
+
 from collections import namedtuple
 from inspect import getmembers, isfunction, signature
 
@@ -19,12 +20,20 @@ def change_cwd(directory):
         os.chdir(prev_cwd)
 
 class CommitMessageVerification:
+    repository = None
+    changed_files = []
+
     def __init__(self, proj_dict:str):
         self.project_directory = proj_dict
     
-    def get_repository_status(self):
-        process = subprocess.Popen(['git', 'status'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return namedtuple('Std', 'out, err')(process.stdout.read(), process.stderr.read())
+    # def get_repository_status(self):
+    #     process = subprocess.Popen(['git', 'status'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    #     return namedtuple('Std', 'out, err')(process.stdout.read(), process.stderr.read())
+
+    # Returns files that were changed and staged
+    def get_changed_files(self):
+        diff_objects = self.repository.index.diff(self.repository.head.commit, create_patch=False)
+        return [(d.a_rawpath, d.change_type) for d in diff_objects]
 
     def get_functions_signature_dict(self, list_of_functions):
         func_sign = {}
@@ -52,16 +61,16 @@ class CommitMessageVerification:
     
     def get_message(self):
         with change_cwd(self.project_directory):
-            print(f'Current directory is {os.getcwd()}')
+            # Initialize git repository based on changed directory
+            self.repository = git.Repo('.')
 
-            # Get repository status
-            out, err = self.get_repository_status()
-            print(f'Repository actual status:')
-            print(f'out = {out}\nerr = {err}\n')
-            # Use 'git diff --cached' instead ?
 
-            class_dict = self.get_cls_func_sign()
-            print(f'Classes with functions with signatures: {class_dict}\n')
+            # Get staged changed files status
+            self.changed_files = self.get_changed_files()
+            print(f'Changed files: {self.changed_files}\n')
+
+            # class_dict = self.get_cls_func_sign()
+            # print(f'Classes with functions with signatures: {class_dict}\n')
 
 
 if __name__ == '__main__':

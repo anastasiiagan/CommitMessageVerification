@@ -7,6 +7,7 @@ import git
 
 from collections import namedtuple
 from inspect import getmembers, isfunction, signature
+import importlib
 
 @contextlib.contextmanager
 def change_cwd(directory):
@@ -46,6 +47,29 @@ class CommitMessageVerification:
         diff_objects = self.repository.index.diff(self.repository.head.commit, create_patch=False)
         return [(d.a_rawpath.decode("utf-8"), d.change_type) for d in diff_objects]
 
+    def get_modules_to_import(self):
+        """Returns modules."""
+        cwd = Path.cwd()
+
+        modules = []
+        for file_dir, file_type in self.changed_files:
+            file_name = os.path.basename(file_dir)[:-3]
+            path_to_file = os.path.join(cwd,file_dir)
+            # print(f'File name: {file_name}')
+            # print(f'File path: {path_to_file}')
+
+            spec = importlib.util.spec_from_file_location(file_name, path_to_file)
+            module = importlib.util.module_from_spec(spec)
+            modules.append(module) #spec.loader.exec_module(module)
+            # modules.append(importlib.import_module('.' + str(file_name), package=path_to_file))
+
+        return modules     
+        '''dir_to_module_name = [('\\').join([str(cwd),file_name_type[0]]) for file_name_type in self.changed_files]
+        print(f'pathes to modules: {dir_to_module_name}')
+        return [importlib.import_module(module_name, cwd) for module_name in dir_to_module_name]'''
+        # Replaces '/' with '.' in directory and removes ".py" at the end
+        #not the best way, should try something else
+
     def get_functions_signature_dict(self, list_of_functions):
         func_sign = {}
         for func_name, func_obj in list_of_functions:
@@ -53,9 +77,9 @@ class CommitMessageVerification:
             func_sign[func_name] = func_signature
         return func_sign
 
-    def get_cls_func_sign(self):
+    def get_cls_func_sign(self, modules_imported):
         # Get list of classes
-        clsmembers = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+        clsmembers = [inspect.getmembers(module, inspect.isclass) for module in modules_imported]
         print(f'Repository classes: {clsmembers}\n')
 
         # Get functions for each class
@@ -79,7 +103,14 @@ class CommitMessageVerification:
             self.changed_files = self.get_changed_files()
             print(f'Changed files: {self.changed_files}\n')
 
+            modules_imported = self.get_modules_to_import()
+            print(f'Modules imported: {modules_imported}\n')
+
+            cls_after_changes = self.get_cls_func_sign(modules_imported)
+
             with GitStash(self.repository, self.changed_files):
+                cls_before_changes = []
+
                 print(f'Changed files after git stash push: {self.get_changed_files()}\n')
             
             print(f'Changed files after git stash pop: {self.get_changed_files()}\n')

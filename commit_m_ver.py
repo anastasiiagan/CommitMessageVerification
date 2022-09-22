@@ -60,7 +60,7 @@ class CommitMessageVerification:
 
             spec = importlib.util.spec_from_file_location(file_name, path_to_file)
             module = importlib.util.module_from_spec(spec)
-            modules.append(module) #spec.loader.exec_module(module)
+            modules.append(spec.loader.exec_module(module)) #spec.loader.exec_module(module)
             # modules.append(importlib.import_module('.' + str(file_name), package=path_to_file))
 
         return modules     

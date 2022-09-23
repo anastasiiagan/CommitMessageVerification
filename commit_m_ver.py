@@ -99,7 +99,7 @@ class CommitMessageVerification:
             func_signature_dict = self.get_functions_signature_dict(class_functions)
             # print(f'Functions with signatures: {func_signature_dict}\n')
 
-            class_dict[cls_obj] = func_signature_dict
+            class_dict[cls_obj.__name__] = func_signature_dict
         return class_dict
 
     def compare_directories(self, cls_after_changes, cls_before_changes):
@@ -107,23 +107,26 @@ class CommitMessageVerification:
         for cls_obj, func_list in cls_after_changes.items():
             if cls_obj in cls_before_changes:
                 func_before_changes = cls_before_changes[cls_obj]
-                for func_name, func_sign in func_list:
+                for func_name, func_sign in func_list.items():
                     if func_name in func_before_changes:
-                        func_sign_before_changes = func_before_changes[func_name]
-                        
-                        for aft, bef in zip(func_sign.parameters,func_sign_before_changes.parameters):
-                            if len(aft) > len(bef):
-                                result = "FEAT"
-                                new_params = list(set(aft) - set(bef))
-                                for param in new_params:
-                                    if '=' not in param:
-                                        # Added argument is not optional
-                                        return "MAJOR"
+                        func_param_before = func_before_changes[func_name].parameters.values()
+
+                        if len(func_sign.parameters.values()) > len(func_param_before):
+                            result = "FEAT"
+                            new_params = list(set(func_sign.parameters.values()) - set(func_param_before))
+                            print(f'new params in class {cls_obj} function {func_name}: {new_params}')
+                            for param in new_params:
+                                print(f'Param default = {param.default}')
+                                if param.default == inspect._empty:
+                                    # Added argument is not optional
+                                    print(f'param default {param.default}')
+                                    return "MAJOR"
                     else:
                         # the method was added after the change
                         result = "FEAT"
             else:
                 # the class was added after the change
+                print(f'class {cls_obj} is new')
                 result = "FEAT"
 
         for cls_obj, func_list in cls_before_changes.items():

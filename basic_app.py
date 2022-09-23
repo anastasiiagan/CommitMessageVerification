@@ -27,7 +27,7 @@ class Library(Resource):
         return "OK", 200
 
 
-    def add(self,title,author="William Shakespeare"):
+    def add(self,title,author):
         book = Book(title, author)
         self.libraryList.append(book)
         return "OK", 200

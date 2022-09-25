@@ -9,6 +9,17 @@ from inspect import getmembers, isfunction, signature
 from pathlib import Path
 
 import git
+from enums import CommitMessage
+import argparse
+
+my_parser = argparse.ArgumentParser(description='Print the type of conventional commit')
+my_parser.add_argument('-p', '--path',
+                       metavar='path',
+                       type=str,
+                       default='.',
+                       help='The path to git repository')
+args = my_parser.parse_args()
+
 
 
 @contextlib.contextmanager
@@ -87,7 +98,7 @@ class CommitMessageVerification:
             )
         ]
 
-    #@staticmethod <- nie moæna bo uruchamia inna metode w klasie
+    #@staticmethod <- nie mozna bo uruchamia inna metode w klasie
     def get_cls_func_sign(self, modules_imported):
         # Get list of classes
         # clsmembers = [inspect.getmembers(module, inspect.isclass) for module in modules_imported]
@@ -107,40 +118,45 @@ class CommitMessageVerification:
             class_dict[cls_obj.__name__] = func_signature_dict
         return class_dict
 
-    #@staticmethod
+    @staticmethod
+    def compare_fun_params(func_param_after, func_param_before):
+        result = CommitMessage.FIX
+        if len(func_param_after) > len(func_param_before):
+            result = CommitMessage.FEAT
+            new_params = list(set(func_param_after) - set(func_param_before))
+            for param in new_params:
+                print(f'Param default = {param.default}')
+                if param.default == inspect._empty:
+                    # Added argument is not optional
+                    return CommitMessage.MAJOR
+        return result
+
+
     def compare_directories(self, cls_after_changes, cls_before_changes):
-        result = "FIX"
+        result = CommitMessage.FIX
         for cls_obj, func_list in cls_after_changes.items():
             if cls_obj in cls_before_changes:
                 func_before_changes = cls_before_changes[cls_obj]
                 for func_name, func_sign in func_list.items():
                     if func_name in func_before_changes:
+                        func_param_after = func_sign.parameters.values()
                         func_param_before = func_before_changes[func_name].parameters.values()
-
-                        if len(func_sign.parameters.values()) > len(func_param_before):
-                            result = "FEAT"
-                            new_params = list(set(func_sign.parameters.values()) - set(func_param_before))
-                            print(f'new params in class {cls_obj} function {func_name}: {new_params}')
-                            for param in new_params:
-                                print(f'Param default = {param.default}')
-                                if param.default == inspect._empty:
-                                    # Added argument is not optional
-                                    print(f'param default {param.default}')
-                                    return "MAJOR"
+                        comparison_commit = self.compare_fun_params(func_param_after,func_param_before)
+                        result = CommitMessage.get_max_by_value(result, comparison_commit)
                     else:
                         # the method was added after the change
-                        result = "FEAT"
+                        result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
             else:
                 # the class was added after the change
                 print(f'class {cls_obj} is new')
-                result = "FEAT"
+                result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
 
         for cls_obj, func_list in cls_before_changes.items():
             if cls_obj not in cls_after_changes:
                 # the class is missing after the changes
-                return "MAJOR"
+                return CommitMessage.MAJOR._name_
 
-        return result
+        return result._name_
 
     
     def get_message(self):
@@ -172,9 +188,5 @@ class CommitMessageVerification:
 
 
 if __name__ == '__main__':
-    project_directory = str(sys.argv[1])
-    if project_directory:
-        verification = CommitMessageVerification(project_directory)
-        verification.get_message()
-    else:
-        print("The directory of repository wasn't provided")
+    verification = CommitMessageVerification(args.path)
+    verification.get_message()

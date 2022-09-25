@@ -1,14 +1,15 @@
-import sys, inspect
-import os
-from pathlib import Path
 import contextlib
+import importlib
+import inspect
+import itertools
+import os
+import sys
+from collections import namedtuple
+from inspect import getmembers, isfunction, signature
+from pathlib import Path
 
 import git
 
-from collections import namedtuple
-from inspect import getmembers, isfunction, signature
-import importlib
-import itertools
 
 @contextlib.contextmanager
 def change_cwd(directory):
@@ -43,17 +44,19 @@ class CommitMessageVerification:
     def __init__(self, proj_dict:str):
         self.project_directory = proj_dict
 
-    def get_changed_files(self):
+    @staticmethod
+    def get_changed_files(repository):
         """Returns files that were changed and staged."""
-        diff_objects = self.repository.index.diff(self.repository.head.commit, create_patch=False)
+        diff_objects = repository.index.diff(repository.head.commit, create_patch=False)
         return [(d.a_rawpath.decode("utf-8"), d.change_type) for d in diff_objects]
 
-    def get_modules_to_import(self):
+    @staticmethod
+    def get_modules_to_import(changed_files):
         """Returns modules."""
         cwd = Path.cwd()
 
         modules = []
-        for file_dir, file_type in self.changed_files:
+        for file_dir, file_type in changed_files:
             file_name = os.path.basename(file_dir)[:-3]
             path_to_file = os.path.join(cwd,file_dir)
 
@@ -64,18 +67,19 @@ class CommitMessageVerification:
                 modules.append(module)
             except FileNotFoundError:
                 print(f"File {file_name} doesn't exist. Unable to install module.")
-            # modules.append(importlib.import_module('.' + str(file_name), package=path_to_file))
 
         return modules
 
-    def get_functions_signature_dict(self, list_of_functions):
+    @staticmethod
+    def get_functions_signature_dict(list_of_functions):
         func_sign = {}
         for func_name, func_obj in list_of_functions:
             func_signature = signature(func_obj)
             func_sign[func_name] = func_signature
         return func_sign
     
-    def cls_in_module(self, module):
+    @staticmethod
+    def cls_in_module(module):
         md = module.__dict__
         return [
             md[c] for c in md if (
@@ -83,6 +87,7 @@ class CommitMessageVerification:
             )
         ]
 
+    #@staticmethod <- nie moæna bo uruchamia inna metode w klasie
     def get_cls_func_sign(self, modules_imported):
         # Get list of classes
         # clsmembers = [inspect.getmembers(module, inspect.isclass) for module in modules_imported]
@@ -102,6 +107,7 @@ class CommitMessageVerification:
             class_dict[cls_obj.__name__] = func_signature_dict
         return class_dict
 
+    #@staticmethod
     def compare_directories(self, cls_after_changes, cls_before_changes):
         result = "FIX"
         for cls_obj, func_list in cls_after_changes.items():
@@ -143,21 +149,17 @@ class CommitMessageVerification:
             self.repository = git.Repo()
 
             # Get staged changed files status
-            self.changed_files = self.get_changed_files()
+            self.changed_files = self.get_changed_files(self.repository)
             # print(f'Changed files: {self.changed_files}\n')
 
-            modules_imported = self.get_modules_to_import()
+            modules_imported = self.get_modules_to_import(self.changed_files)
             # print(f'Modules imported: {modules_imported}\n')
 
             cls_after_changes = self.get_cls_func_sign(modules_imported)
 
             with GitStash(self.repository, self.changed_files):
-                modules_imported = self.get_modules_to_import()
+                modules_imported = self.get_modules_to_import(self.changed_files)
                 cls_before_changes = self.get_cls_func_sign(modules_imported)
-
-                # print(f'Changed files after git stash push: {self.get_changed_files()}\n')
-            
-            # print(f'Changed files after git stash pop: {self.get_changed_files()}\n')
 
             print(f'Classes with signatures after changes: {cls_after_changes}\n')
 

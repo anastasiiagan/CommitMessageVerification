@@ -49,11 +49,21 @@ class GitStash(object):
             self.repo.git.add(changed_file[0])
 
 class CommitMessageVerification:
-    repository = None
+    _repository = None
     changed_files = []
 
     def __init__(self, proj_dict:str):
         self.project_directory = proj_dict
+
+    def get_repository(self):
+        return self._repository
+      
+    def set_repository(self):
+        try:
+            self._repository = git.Repo(self.project_directory)
+        except (git.InvalidGitRepositoryError, ValueError):
+            print("The path doesn't provide to git repository")
+
 
     @staticmethod
     def get_changed_files(repository):
@@ -162,10 +172,12 @@ class CommitMessageVerification:
     def get_message(self):
         with change_cwd(self.project_directory):
             # Initialize git repository based on changed directory
-            self.repository = git.Repo()
+            # self.set_repository()
+            # self._repository = self.get_repository()
+            self._repository = git.Repo()
 
             # Get staged changed files status
-            self.changed_files = self.get_changed_files(self.repository)
+            self.changed_files = self.get_changed_files(self._repository)
             # print(f'Changed files: {self.changed_files}\n')
 
             modules_imported = self.get_modules_to_import(self.changed_files)
@@ -173,7 +185,7 @@ class CommitMessageVerification:
 
             cls_after_changes = self.get_cls_func_sign(modules_imported)
 
-            with GitStash(self.repository, self.changed_files):
+            with GitStash(self._repository, self.changed_files):
                 modules_imported = self.get_modules_to_import(self.changed_files)
                 cls_before_changes = self.get_cls_func_sign(modules_imported)
 

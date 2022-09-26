@@ -7,6 +7,7 @@ import sys
 from collections import namedtuple
 from inspect import getmembers, isfunction, signature
 from pathlib import Path
+from types import new_class
 
 import git
 from enums import CommitMessage
@@ -95,17 +96,9 @@ class CommitMessageVerification:
         return modules
 
     @staticmethod
-    def get_functions_signature_dict(list_of_functions):
-        func_sign = {}
-        for func_name, func_obj in list_of_functions:
-            func_signature = signature(func_obj)
-            func_sign[func_name] = func_signature
-        return func_sign
-
-    @staticmethod
     def get_obj_signature(list_of_objects):
         '''Gets object's signatures.'''
-        return [(obj_name, signature(obj)) for obj_name, obj in list_of_objects]
+        return [(obj, signature(obj)) for obj_name, obj in list_of_objects]
     
     @staticmethod
     def cls_in_module(module):
@@ -149,27 +142,48 @@ class CommitMessageVerification:
 
     def compare_directories(self, cls_after_changes, cls_before_changes):
         result = CommitMessage.FIX
-        for cls_obj, func_list in cls_after_changes:
-            if cls_obj in cls_before_changes:
-                func_before_changes = cls_before_changes[cls_obj]
-                for func_name, func_sign in func_list:
-                    if func_name in func_before_changes:
-                        func_param_after = func_sign.parameters.values()
-                        func_param_before = func_before_changes[func_name].parameters.values()
-                        comparison_commit = self.compare_fun_params(func_param_after,func_param_before)
-                        result = CommitMessage.get_max_by_value(result, comparison_commit)
-                    else:
-                        # the method was added after the change
-                        result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
-            else:
-                # the class was added after the change
-                print(f'class {cls_obj} is new')
-                result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
+        cls_after_objects = set([cls_obj_sign[0] for cls_obj_sign in cls_after_changes])
+        cls_before_objects = set([cls_obj_sign[0] for cls_obj_sign in cls_before_changes])
+        new_classes = cls_after_objects.difference(cls_before_objects)
+        deleted_classes = cls_before_objects.difference(cls_after_objects)
+        same_classes = cls_after_objects.intersection(cls_before_objects)
 
-        for cls_obj, func_list in cls_before_changes:
-            if cls_obj not in cls_after_changes:
-                # the class is missing after the changes
+        if deleted_classes is not []:
+            print(f'Deleted classes: {deleted_classes}')
+            return CommitMessage.MAJOR._name_
+
+        if new_classes is not []:
+            print(f'New classes: {new_classes}')
+            result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
+        
+        classes_to_compare = [(cls_obj, func_list) for cls_obj, func_list in cls_after_changes if cls_obj in same_classes]
+
+
+        for cls_obj, func_list in classes_to_compare:
+            func_after_objects = set([func_obj_sign[0] for func_obj_sign in func_list])
+            func_before_objects = set([func_obj_sign[0] for func_obj_sign in cls_after_changes[cls_obj]])
+            new_functions = func_after_objects.difference(func_before_objects)
+            deleted_functions = func_before_objects.difference(func_after_objects)
+            same_functions = func_after_objects.intersection(func_before_objects)
+
+            if deleted_classes is not []:
+                print(f'Deleted functions: {deleted_functions}')
                 return CommitMessage.MAJOR._name_
+
+            if new_functions is not []:
+                print(f'New functions: {new_classes}')
+                result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
+            
+            functions_to_compare = [(cls_obj, func_list) for cls_obj, func_list in cls_after_changes if cls_obj in same_functions]
+
+            func_before_changes = cls_after_changes[cls_obj]
+            for func_obj, func_sign in functions_to_compare:
+                if result == CommitMessage.MAJOR:
+                    return result._name_
+                func_param_after = func_sign.parameters.values()
+                func_param_before = func_before_changes[func_obj].parameters.values()
+                comparison_commit = self.compare_fun_params(func_param_after,func_param_before)
+                result = CommitMessage.get_max_by_value(result, comparison_commit)
 
         return result._name_
 
@@ -181,29 +195,17 @@ class CommitMessageVerification:
             # self._repository = self.get_repository() # if None -> break?
             self._repository = git.Repo()
 
-            # Get staged changed files status
             self.changed_files = self.get_changed_files(self._repository)
-            # print(f'Changed files: {self.changed_files}\n')
-
             modules_imported = self.get_modules_to_import(self.changed_files)
-            # print(f'Modules imported: {modules_imported}\n')
-
             cls_after_changes = self.get_cls_func_sign(modules_imported)
 
             with GitStash(self._repository, self.changed_files):
                 modules_imported = self.get_modules_to_import(self.changed_files)
                 cls_before_changes = self.get_cls_func_sign(modules_imported)
 
-            print(f'Classes with signatures after changes: {cls_after_changes}\n')
-
-            print(f'Classes with signatures before changes: {cls_before_changes}\n')
-
             print(f'RESULT:    {self.compare_directories(cls_after_changes, cls_before_changes)}')
 
             
-
-
-
 if __name__ == '__main__':
     verification = CommitMessageVerification('-p', '..')
     verification.get_message()

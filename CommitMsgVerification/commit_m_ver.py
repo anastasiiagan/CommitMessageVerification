@@ -12,13 +12,15 @@ import git
 from enums import CommitMessage
 import argparse
 
+ObjData = namedtuple('ObjData','name obj sign')
+
 my_parser = argparse.ArgumentParser(description='Print the type of conventional commit')
 my_parser.add_argument('-p', '--path',
                        metavar='path',
                        type=str,
                        default='.',
                        help='The path to git repository')
-args = my_parser.parse_args()
+
 
 
 
@@ -52,8 +54,9 @@ class CommitMessageVerification:
     _repository = None
     changed_files = []
 
-    def __init__(self, proj_dict:str):
-        self.project_directory = proj_dict
+    def __init__(self, *args):
+        args = my_parser.parse_args(args)
+        self.project_directory = args.path
 
     def get_repository(self):
         return self._repository
@@ -62,7 +65,7 @@ class CommitMessageVerification:
         try:
             self._repository = git.Repo(self.project_directory)
         except (git.InvalidGitRepositoryError, ValueError):
-            print("The path doesn't provide to git repository")
+            return "The path doesn't provide to git repository"
 
 
     @staticmethod
@@ -98,35 +101,37 @@ class CommitMessageVerification:
             func_signature = signature(func_obj)
             func_sign[func_name] = func_signature
         return func_sign
+
+    @staticmethod
+    def get_obj_signature(list_of_objects):
+        '''Gets object's signatures.'''
+        return [(obj_name, signature(obj)) for obj_name, obj in list_of_objects]
     
     @staticmethod
     def cls_in_module(module):
+        '''Gets classes without ones from imports.'''
         md = module.__dict__
         return [
-            md[c] for c in md if (
+            (md[c].__name__, md[c]) for c in md if (
                 isinstance(md[c], type) and md[c].__module__ == module.__name__
             )
         ]
+    
+    @staticmethod
+    def inspect_in_modules(modules_imported, is_func):
+        funcmembers = [inspect.getmembers(module, predicate=is_func) for module in modules_imported]
+        return list(itertools.chain(*funcmembers))
 
-    #@staticmethod <- nie mozna bo uruchamia inna metode w klasie
     def get_cls_func_sign(self, modules_imported):
-        # Get list of classes
-        # clsmembers = [inspect.getmembers(module, inspect.isclass) for module in modules_imported]
+        '''Gets list of tuples: class_name and list of function with signatures.'''
         clsmembers = [self.cls_in_module(module) for module in modules_imported]
         clsmembers = list(itertools.chain(*clsmembers))
+        # clsmembers = self.inspect_in_modules(modules_imported, inspect.isclass)
         print(f'Repository classes: {clsmembers}\n')
 
-        # Get functions for each class
-        class_dict = {}
-        for cls_obj in clsmembers:
-            class_functions = getmembers(cls_obj, isfunction) # inspect.isfunction ?
-            # print(f'Functions of class {cls_obj}: {class_functions}\n')
-
-            func_signature_dict = self.get_functions_signature_dict(class_functions)
-            # print(f'Functions with signatures: {func_signature_dict}\n')
-
-            class_dict[cls_obj.__name__] = func_signature_dict
-        return class_dict
+        return [( cls_obj,
+                    self.get_obj_signature(getmembers(cls_obj, isfunction)))
+                    for cls_name, cls_obj in clsmembers]
 
     @staticmethod
     def compare_fun_params(func_param_after, func_param_before):
@@ -144,10 +149,10 @@ class CommitMessageVerification:
 
     def compare_directories(self, cls_after_changes, cls_before_changes):
         result = CommitMessage.FIX
-        for cls_obj, func_list in cls_after_changes.items():
+        for cls_obj, func_list in cls_after_changes:
             if cls_obj in cls_before_changes:
                 func_before_changes = cls_before_changes[cls_obj]
-                for func_name, func_sign in func_list.items():
+                for func_name, func_sign in func_list:
                     if func_name in func_before_changes:
                         func_param_after = func_sign.parameters.values()
                         func_param_before = func_before_changes[func_name].parameters.values()
@@ -161,7 +166,7 @@ class CommitMessageVerification:
                 print(f'class {cls_obj} is new')
                 result = CommitMessage.get_max_by_value(result, CommitMessage.FEAT)
 
-        for cls_obj, func_list in cls_before_changes.items():
+        for cls_obj, func_list in cls_before_changes:
             if cls_obj not in cls_after_changes:
                 # the class is missing after the changes
                 return CommitMessage.MAJOR._name_
@@ -173,7 +178,7 @@ class CommitMessageVerification:
         with change_cwd(self.project_directory):
             # Initialize git repository based on changed directory
             # self.set_repository()
-            # self._repository = self.get_repository()
+            # self._repository = self.get_repository() # if None -> break?
             self._repository = git.Repo()
 
             # Get staged changed files status
@@ -200,5 +205,5 @@ class CommitMessageVerification:
 
 
 if __name__ == '__main__':
-    verification = CommitMessageVerification(args.path)
+    verification = CommitMessageVerification('-p', '..')
     verification.get_message()
